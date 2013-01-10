@@ -53,6 +53,8 @@ public class SubscribeThread implements Runnable {
 			@Override
 			public void onMessage(String channel, String message) {
 				LogUtils.INFO(log, "message (channel:%s)- %s", channel, message);
+				
+				
 				JsonObject json = new JsonObject()
 				.putString("channel", channel)
 				.putString("action", "message")
@@ -64,11 +66,11 @@ public class SubscribeThread implements Runnable {
 
 			@Override
 			public void onSubscribe(String channel, int subscribedChannels) {
-
+				System.out.println("====================== subscribe "+channel+":"+address);
 				JsonObject json = new JsonObject()
 				.putString("channel", channel)
 				.putString("action", "subscribe");
-				
+				System.out.println(eb);
 				eb.send(address, json);
 			}
 

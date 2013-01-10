@@ -8,9 +8,23 @@
 	
     <script type="text/javascript" src="https://www.google.com/jsapi"></script>
 	<script src="http://cdn.sockjs.org/sockjs-0.3.min.js"></script>
-
+     <script src="http://code.jquery.com/jquery-latest.js"></script>
 	<script>
 		var sock = new SockJS('http://www.notdol.com:9090/echo');
+		var refreshObj;
+		var dataRefreshInterval = 2000;
+		var dataCount = 50;
+		
+		
+		$(document).ready(function(){
+			$('#refreshCmb').on('change',function(e){
+				clearInterval(refreshObj);
+				refreshObj = setInterval(refresh,dataRefreshInterval = $(this).val());
+			})
+		})
+		
+		
+		
 
 		// type : 'subscribe'
 		// data : jsonObject
@@ -23,6 +37,15 @@
 
 		sock.onmessage = function(e){
 			console.log('sock message ===== '+e.data);
+			
+			var message = JSON.parse(e.data);
+			switch(message.type){
+			case 'stat':
+				serverStat(message.serverId,message.time,message.heapUsage);
+				break;
+			
+			}
+			
 		}
 
 		sock.onclose = function(){
@@ -41,14 +64,14 @@
 
 		var idx = 0;
 		// visual refresh interval
-		var dataRefreshInterval = 2000;
-		var insertData = [];
+		var insertData = [0,0,0];
 
 		// serverId, serverName
 		var servers = [0,1,2];
 
 		// 서버를 추가한다.
 		function addServer(serverId, serverName){
+			console.log('addServer - '+serverId);
 			var isExist = false;
 			servers.forEach(function(item){
 				if(item.serverId == serverId) isExist = true;
@@ -67,14 +90,17 @@
 
 		//서버의 상태 정보가 추가 된다. 
 		function serverStat(serverId, time, memory){
-			var idx = 0;
-			var insertData = [];
-			insertData.push(time);
+			var isExist = false;
+			console.log('================== '+serverId +' --- '+time+' --- '+memory);
+			
 			for(var i = 1 ;i < servers.length;i++){
-				if(data.getColumnId(i) == serverId) {insertData.push(memory)}
-				else insertData.push(data.getValue(data.getNumberOfRows()-1,i));
+				if(data.getColumnId(i) == serverId) {isExist = true; insertData[i] = memory; break;}
+				//else insertData.push(data.getValue(data.getNumberOfRows()-1,i));
 			}
-			data.addRow(insertData);
+			
+			if(!isExist) addServer(serverId,serverId);
+			
+			insertData[0] = new Date(time);
 		}
 
 		function chartLoad(){
@@ -89,12 +115,15 @@
 	    };
 
 		    data = new google.visualization.DataTable();
-			data.addColumn('number','Year',0);
-			data.addColumn('number','Sales',1);
-			data.addColumn('number','Expenses',2);
-			data.addRow([2001, 200,200]);
-			data.addRow([2002, 500,500]);
-
+		    
+			data.addColumn('datetime','time');
+			data.addColumn('number','Sales');
+			data.addColumn('number','Expenses');
+			
+			data.addRow([new Date(), 200,200]);
+			data.addRow([new Date(), 500,500]);
+		      var dataView = new google.visualization.DataView(data);
+		      dataView.setColumns([{calc: function(data, row) { return data.getFormattedValue(row, 0); }, type:'string'}, 1]);
 
 			//data.setValue(idx,0,2001);
 			//data.setValue(idx,1,2001);
@@ -102,11 +131,19 @@
 
 			drawChart();
 
-			setInterval(drawChart,2000);
-			setInterval(adS,5000);
-			setInterval(stat,dataRefreshInterval);
+			refreshObj = setInterval(refresh,dataRefreshInterval);
+			//setInterval(drawChart,2000);
+			//setInterval(adS,5000);
+			//setInterval(stat,dataRefreshInterval);
 		}
 
+		function refresh(){
+			console.log('data insert : '+insertData);
+			data.getNumberOfRows() > dataCount ? data.removeRow(0) : null;
+			data.addRow(insertData);
+			drawChart();
+		}
+		
 
 		function adS(){
 			addServer('newServer','newServer');
@@ -134,53 +171,30 @@
     </script>
   </head>
   <body>
-  
-<div class="navbar navbar-inverse navbar-fixed-top">
-      <div class="navbar-inner">
-        <div class="container">
-          <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
-            <span class="icon-bar"></span>
-            <span class="icon-bar"></span>
-            <span class="icon-bar"></span>
-          </a>
-          <a class="brand" href="#">Project name</a>
-          <div class="nav-collapse collapse">
-            <ul class="nav">
-              <li class="active"><a href="#">Home</a></li>
-              <li><a href="#about">About</a></li>
-              <li><a href="#contact">Contact</a></li>
-              <li class="dropdown">
-                <a href="#" class="dropdown-toggle" data-toggle="dropdown">Dropdown <b class="caret"></b></a>
-                <ul class="dropdown-menu">
-                  <li><a href="#">Action</a></li>
-                  <li><a href="#">Another action</a></li>
-                  <li><a href="#">Something else here</a></li>
-                  <li class="divider"></li>
-                  <li class="nav-header">Nav header</li>
-                  <li><a href="#">Separated link</a></li>
-                  <li><a href="#">One more separated link</a></li>
-                </ul>
-              </li>
-            </ul>
-            <form class="navbar-form pull-right">
-              <input class="span2" type="text" placeholder="Email">
-              <input class="span2" type="password" placeholder="Password">
-              <button type="submit" class="btn">Sign in</button>
-            </form>
-            
-          </div><!--/.nav-collapse -->
-        </div>
-      </div>
-    </div>  
-    
-  <div class="input-append">
-  <input class="span2" id="appendedInputButton" type="text">
-  <button class="btn" type="button">Go!</button>
-</div><br /><br /><br /><br />
+<div class="container-fluid">
+  <div class="row-fluid">
+    <div class="span2">
+		<select id="refreshCmb">
+		  <option value="2000">2 sec</option>
+		  <option value="5000">5 sec</option>
+		  <option value="10000">10 sec</option>
+		  <option value="30000">30 sec</option>
+		  <option value="60000">1 min</option>
+		</select>
+
+
+    </div>
+    <div class="span10">
   <div id="chart_div" style="width: 900px; height: 500px;"></div>
+    </div>
+  </div>
+</div>
+    
+    
+    
+
  
  
-     <script src="http://code.jquery.com/jquery-latest.js"></script>
     <script src="js/bootstrap.min.js"></script>
  
   </body>

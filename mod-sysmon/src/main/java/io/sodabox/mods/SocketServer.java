@@ -8,19 +8,39 @@ import org.vertx.java.core.Handler;
 import org.vertx.java.core.SimpleHandler;
 import org.vertx.java.core.Vertx;
 import org.vertx.java.core.buffer.Buffer;
+import org.vertx.java.core.eventbus.EventBus;
+import org.vertx.java.core.eventbus.Message;
 import org.vertx.java.core.http.HttpServer;
+import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
 import org.vertx.java.core.sockjs.SockJSServer;
 import org.vertx.java.core.sockjs.SockJSSocket;
 
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
+
 public class SocketServer {
 	final List<SockJSSocket> sockList = new ArrayList<>();
-	public SocketServer(Vertx vertx){
+	private JedisPool jedisP;
+	
+	public SocketServer(Vertx vertx,String host,int port){
+		//this.eb = eb;
+		JedisPoolConfig config = new JedisPoolConfig();
+		config.testOnBorrow = true;
+
+		
+		if( host == null || host.length() == 0 ){
+			jedisP = new JedisPool(config, "localhost");
+		}else{
+			jedisP = new JedisPool(config, host, port);
+		}
 		System.out.println("Socket Server started " );
 		//Vertx vertx = Vertx.newVertx();
 		HttpServer server = vertx.createHttpServer();
 		SockJSServer sockJSServer = vertx.createSockJSServer(server);
 		JsonObject sockConfig = new JsonObject().putString("prefix", "/echo");
+		
 		sockJSServer.installApp(sockConfig, new Handler<SockJSSocket>() {
 			
 			@Override
@@ -28,23 +48,46 @@ public class SocketServer {
 				// TODO Auto-generated method stub
 				System.out.println("SOCKET OPENED");
 				
+				
 				sockList.add(sock);
 				
 				sock.dataHandler(new Handler<Buffer>() {
-					public void handle(Buffer buffer){
-						if(!sock.writeQueueFull()){
-							sock.writeBuffer(buffer);
-						}else {
-							sock.pause();
-							sock.drainHandler(new SimpleHandler() {
-								
-								@Override
-								protected void handle() {
-									// TODO Auto-generated method stub
-									sock.resume();
-								}
-							});
+					
+					@Override
+					public void handle(Buffer buffer) {
+						// TODO Auto-generated method stub
+						
+						JsonObject sentMe = new JsonObject(buffer.toString());
+						
+						String action = sentMe.getString("action");
+						System.out.println(sentMe);
+						switch(action){
+						case "AS":
+							Jedis jedis = jedisP.getResource();
+							System.out.println(jedis.llen("serverId"));
+							List<String> servers = jedis.lrange("serverId", 0, jedis.llen("serverId"));
+							
+							JsonObject serverObj = new JsonObject();
+							JsonArray serverArr = new JsonArray();
+							
+							
+							Iterator<String> serverIter = servers.iterator();
+							
+							while(serverIter.hasNext()){
+								serverArr.addString(serverIter.next());
+							}
+							serverObj.putArray("serverList", serverArr);
+							publishMessage(serverObj.encode());
+							jedisP.returnResource(jedis);
+						break;
+						
+						 default:
+						
+						break;
+						
 						}
+						
+						
 					}
 				});
 				
