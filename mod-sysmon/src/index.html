@@ -10,12 +10,13 @@
 	<script src="http://cdn.sockjs.org/sockjs-0.3.min.js"></script>
      <script src="http://code.jquery.com/jquery-latest.js"></script>
 	<script>
-		var sock = new SockJS('http://www.notdol.com:9090/echo');
+		var sock = new SockJS('http://www.notdol.com:9090/stat');
 		var refreshObj;
 		var dataRefreshInterval = 2000;
 		var dataCount = 50;
-		
-		
+		var SOCKET_AC_SEND_STAT = 'sockAcSendStat';
+		var SERVER_LIST = 'svrList';
+		var SERVER_PARAM_LIST = 'svrParamList';		
 		$(document).ready(function(){
 			$('#refreshCmb').on('change',function(e){
 				clearInterval(refreshObj);
@@ -33,18 +34,26 @@
 		sock.onopen = function(){
 			// 
 			console.log('=========== sock open ===============');
+
+
+			var obj = {action:SOCKET_AC_SEND_STAT,'svrList':[],'svrParamList':[]};
+			sock.send(JSON.stringify(obj));
 		}
 
 		sock.onmessage = function(e){
 			console.log('sock message ===== '+e.data);
 			
 			var message = JSON.parse(e.data);
-			switch(message.type){
-			case 'stat':
-				serverStat(message.serverId,message.time,message.heapUsage);
-				break;
+			//switch(message.type){
+			//case 'stat':
+
+				for(var key in message){
+					serverStat(key, message[key].time,message[key].heapUsage);	
+				}
+				
+			//	break;
 			
-			}
+			//}
 			
 		}
 
@@ -94,13 +103,13 @@
 			console.log('================== '+serverId +' --- '+time+' --- '+memory);
 			
 			for(var i = 1 ;i < servers.length;i++){
-				if(data.getColumnId(i) == serverId) {isExist = true; insertData[i] = memory; break;}
+				if(data.getColumnId(i) == serverId) {isExist = true; insertData[i] = Number(memory); break;}
 				//else insertData.push(data.getValue(data.getNumberOfRows()-1,i));
 			}
 			
 			if(!isExist) addServer(serverId,serverId);
 			
-			insertData[0] = new Date(time);
+			insertData[0] = new Date(Number(time));
 		}
 
 		function chartLoad(){

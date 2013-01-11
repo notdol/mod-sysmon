@@ -8,6 +8,8 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.Iterator;
+import java.util.Set;
 
 import org.vertx.java.busmods.BusModBase;
 import org.vertx.java.core.Handler;
@@ -43,12 +45,12 @@ public class SysMonitor extends BusModBase implements Handler<Message<JsonObject
 
 	public void start() {
 		super.start();
-		sockServer = new SocketServer(vertx, host,port);
 
 		address = getOptionalStringConfig("address", "sodabox.sysmon");
 		host = getOptionalStringConfig("host", "www.notdol.com");
 		port = getOptionalIntConfig("port", 6379);
 		channel = getOptionalStringConfig("channel", "SYSMON");
+		sockServer = new SocketServer(vertx, host,port);
 
 		new SubscribeThread(log, eb, address, host, port, channel);
 
@@ -68,9 +70,7 @@ public class SysMonitor extends BusModBase implements Handler<Message<JsonObject
 		}else{
 			jedisPool = new JedisPool(config, host, port);
 		}
-		System.out.println(address+"핸들러 등록");
 		eb.registerHandler(address, this);
-			
 	}
 
 	public void stop() {
@@ -78,7 +78,6 @@ public class SysMonitor extends BusModBase implements Handler<Message<JsonObject
 	}
 
 	public void handle(Message<JsonObject> message) {
-		System.out.println(message);
 		String action = message.body.getString("action");
 
 		if (action == null) {
@@ -88,7 +87,7 @@ public class SysMonitor extends BusModBase implements Handler<Message<JsonObject
 		sendError(message,action+" is sent!!");
 
 		switch (action) {
-			case "subscribe":
+			case SL.ACTION_SUBSCRIBE:
 				timerId = vertx.setPeriodic(DEFAULT_INTERVAL, new Handler<Long>() {
 					public void handle(Long event) {
 						sendStats();
@@ -100,31 +99,43 @@ public class SysMonitor extends BusModBase implements Handler<Message<JsonObject
 				break;
 				
 			case "message" : 
-				
-				
 				JsonObject getMessage = new JsonObject(message.body.getString("messageTxt"));
-				String serverId = getMessage.getString("serverId");
+				String serverId = getMessage.getString(SL.SERVER_ID);
 				
-				String eServerId ;
-				Boolean isExistServer = false;
 				Jedis jedis = jedisPool.getResource();
+
+				if(jedis.hexists(serverId, SL.SERVER_ID) == false){
+					System.out.println("=================== add server "+serverId);
+					jedis.hset(serverId, SL.SERVER_ID, serverId );
+					jedis.lpush(SL.SERVER_LIST , serverId);
+				}
+				jedis.hset(serverId, "time", String.valueOf(Calendar.getInstance().getTimeInMillis()));
+
+				JsonObject svrStat = getMessage.getObject(SL.SERVER_STAT);
+				Iterator<String> svrStatKeys = svrStat.getFieldNames().iterator();
 				
-				for(int i=0;i < jedis.llen("serverId"); i++ ){
-					eServerId = jedis.lindex("serverId", i);
+				String statKey = null;
+				while(svrStatKeys.hasNext()){
+					statKey = svrStatKeys.next();
+					jedis.hset(serverId, statKey, svrStat.getString(statKey)) ;
+				}
+				
+				System.out.println("==========================");
+				System.out.println(jedis.hgetAll(serverId));
+				/*
+				for(int i=0;i < jedis.llen(SL.SERVER_ID); i++ ){
+					eServerId = jedis.lindex(SL.SERVER_ID, i);
 					if(serverId.equalsIgnoreCase(eServerId)){
 						isExistServer = true; break;
 					}
 				}
-				if(isExistServer == false) {jedis.lpush("serverId", serverId);
-					System.out.println(isExistServer+":"+serverId);
+				if(isExistServer == false) {
+					jedis.lpush(SL.SERVER_ID, serverId);
 				}
+				*/
 				jedisPool.returnResource(jedis);
 
-				String messageType = message.body.getString("messageType");
-				String messageTxt = message.body.getString("messageTxt");
-				
-				System.out.println("vertx interval");
-				sockServer.publishMessage(messageTxt);
+				//sockServer.publishMessage(message.body.getString("messageTxt"));
 				break;
 				
 			default:
@@ -134,35 +145,33 @@ public class SysMonitor extends BusModBase implements Handler<Message<JsonObject
 	}
 
 	private void sendStats() {
-
 		MemoryUsage usage = memoryMXBean.getHeapMemoryUsage();
 		long maxMem = usage.getMax();
 		long usedMem = usage.getUsed();
 		float heapPercentageUsage = 100 * ((float) usedMem/maxMem);
 		long uptime = runtimeMXBean.getUptime();
 
+		JsonObject stat;
 		JsonObject stats = new JsonObject()
 		.putString("type", "stat")
-		.putNumber("time", Calendar.getInstance().getTimeInMillis())
-		.putNumber("uptime", uptime)
-		.putNumber("heapUsage", usedMem)
-		.putNumber("heapPercentageUsage", heapPercentageUsage);
+		.putString("time", String.valueOf(Calendar.getInstance().getTimeInMillis()) )
+		.putString("uptime", String.valueOf(uptime) )
+		.putObject(SL.SERVER_STAT, 
+				stat = new JsonObject()
+			.putString("heapUsage", String.valueOf(usedMem) )
+			.putString("heapPercentageUsage", String.valueOf(heapPercentageUsage) )
+				);
 
 		InetAddress Address;
 		try {
 			Address = InetAddress.getLocalHost();
-			stats.putString("serverId",Address.getHostName());
-			stats.putString("hostName", Address.getHostName());
-			stats.putString("hostAddress", Address.getHostAddress());
-			System.out.println("로컬 컴퓨터의 이름 : "+Address.getHostName());
-
-			System.out.println("로컬 컴퓨터의 IP 주소 : "+Address.getHostAddress());
-
+			stats.putString(SL.SERVER_ID,Address.getHostName());
+			stat.putString("hostName", Address.getHostName());
+			stat.putString("hostAddress", Address.getHostAddress());
 		} catch (UnknownHostException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		
 
 		Jedis jedis = jedisPool.getResource();
 		jedis.publish(channel, stats.encode());

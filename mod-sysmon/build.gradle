@@ -112,6 +112,6 @@ task collectDeps(type: Copy) {
 
 task distCP( type: Sync , dependsOn: 'dist'){
   from 'build/mod'
-  into 'z:/nDisk/pds/repository/vertx/mods'
+  into './../mods'
 }
 
